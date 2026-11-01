@@ -52,7 +52,9 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        enableImmersiveMode();
+        if (getPackageManager().hasSystemFeature("android.software.leanback")) {
+            enableImmersiveMode();
+        }
 
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);

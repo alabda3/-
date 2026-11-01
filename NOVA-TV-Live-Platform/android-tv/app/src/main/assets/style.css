@@ -14,3 +14,23 @@
   outline-offset:2px;
   box-shadow:0 0 0 5px rgba(140,96,255,.2);
 }
+
+/* NOVA TV mobile and tablet */
+@media (max-width:960px) {
+ body {overflow:auto}
+ .app-shell {height:auto;min-height:100dvh;padding:0 12px}
+ .tv-grid {display:grid;grid-template-columns:minmax(0,1fr);
+   grid-template-areas:"viewer" "sidebar" "channels"}
+ .viewer {grid-area:viewer;padding:12px 0 8px}
+ .sidebar,.channel-panel {height:auto;min-height:0;
+   border-right:0;border-top:1px solid var(--border);
+   padding:14px 0}
+ .categories {flex:none;flex-direction:row;gap:8px;
+   overflow-x:auto;overflow-y:hidden;white-space:nowrap}
+ .category-item {flex:0 0 auto;width:auto;min-height:44px}
+ .category-label {text-align:right}
+ .channels {flex:none;max-height:45vh;overflow-y:auto}
+ .channel-item {min-height:60px}
+ .viewer-button,.top-button {min-height:44px}
+ .brand-caption,.keyboard-tip {display:none}
+}

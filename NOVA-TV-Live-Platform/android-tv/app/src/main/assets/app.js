@@ -208,6 +208,7 @@ function init(){updateClock();setInterval(updateClock,30000);render();
   document.addEventListener('focusin',e=>{if(window.NovaAndroid&&e.target.matches('input,textarea,select'))window.NovaAndroid.setEditing(true)});
   document.addEventListener('focusout',e=>{if(window.NovaAndroid&&e.target.matches('input,textarea,select'))window.NovaAndroid.setEditing(false)});
   window.addEventListener('resize',requestNativeBounds);
+  window.addEventListener('scroll',requestNativeBounds,{passive:true});
   document.addEventListener('keydown',e=>{
     if(els.dialog.open || $('#streamDialog').open){
       if(e.key==='Escape'){e.preventDefault();els.dialog.open?els.dialog.close():$('#streamDialog').close()}
