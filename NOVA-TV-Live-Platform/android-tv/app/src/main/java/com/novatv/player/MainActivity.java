@@ -1,6 +1,13 @@
 package com.novatv.player;
 
 import android.app.Activity;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import org.json.JSONObject;
+
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Color;
@@ -413,6 +420,48 @@ public class MainActivity extends Activity {
     }
 
     private final class NativeBridge {
+        // Fetch only the public config. Background thread avoids blocking video/UI.
+        @JavascriptInterface
+        public void fetchChannelConfig(String origin) {
+            new Thread(() -> {
+                HttpURLConnection connection = null;
+                try {
+                    Uri uri = Uri.parse(origin == null ? "" : origin.trim());
+                    if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null
+                            || uri.getHost().isEmpty() || uri.getUserInfo() != null) {
+                        throw new IllegalArgumentException("Invalid HTTPS platform URL");
+                    }
+                    URL endpoint = new URL("https", uri.getHost(), uri.getPort(), "/config.json");
+                    connection = (HttpURLConnection) endpoint.openConnection();
+                    connection.setConnectTimeout(8000);
+                    connection.setReadTimeout(8000);
+                    connection.setUseCaches(false);
+                    connection.setInstanceFollowRedirects(false);
+                    connection.setRequestProperty("Accept", "application/json");
+                    if (connection.getResponseCode() != HttpURLConnection.HTTP_OK)
+                        throw new IllegalStateException("Config HTTP " + connection.getResponseCode());
+                    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                    try (InputStream input = connection.getInputStream()) {
+                        byte[] buffer = new byte[8192];
+                        int n;
+                        while ((n = input.read(buffer)) != -1) {
+                            if (bytes.size() + n > 131072) throw new IllegalStateException("Config too large");
+                            bytes.write(buffer, 0, n);
+                        }
+                    }
+                    String json = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+                    new JSONObject(json); // Validate JSON before forwarding to UI.
+                    evaluateJs("window.novaConfigLoaded && window.novaConfigLoaded(" + JSONObject.quote(json) + ")");
+                } catch (Exception ex) {
+                    android.util.Log.w("NOVA-TV", "Channel sync failed: " + ex.getMessage());
+                    evaluateJs("window.novaConfigFailed && window.novaConfigFailed()");
+                } finally {
+                    if (connection != null) connection.disconnect();
+                }
+            }, "nova-channels-sync").start();
+        }
+
+
         @JavascriptInterface
         public void play(String url) { runOnUiThread(() -> playMedia(url)); }
 

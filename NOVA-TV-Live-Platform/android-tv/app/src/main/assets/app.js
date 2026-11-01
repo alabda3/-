@@ -3,6 +3,18 @@
 const STORAGE_CHANNELS = 'nova-tv-custom-channels-v1';
 const STORAGE_FAVS = 'nova-tv-favorites-v1';
 const STORAGE_LIVE = 'nova-tv-own-live-url-v1';
+// NOVA_REMOTE_CONFIG_V1 - public /config.json, NOT the admin API or password.
+const STORAGE_PLATFORM = 'nova-tv-platform-origin-v1';
+const DEFAULT_PLATFORM = 'https://urban-winner-77w54977944vcxpg5-8080.app.github.dev';
+function normalizePlatform(value){
+  try {
+    const u = new URL(String(value||'').trim());
+    return u.protocol === 'https:' && !u.username && !u.password ? u.origin : '';
+  }catch{return ''}
+}
+let platformOrigin = normalizePlatform(localStorage.getItem(STORAGE_PLATFORM)) || DEFAULT_PLATFORM;
+let remoteChannels = null;
+
 // nova-tv-autoplay-1.3: setting persists on this device.
 const STORAGE_AUTOPLAY = 'nova-tv-autoplay-v1';
 function shouldAutoplay(){
@@ -37,8 +49,8 @@ customChannels=customChannels.filter(c=>c&&typeof c.name==='string'&&typeof c.gr
 let favorites = safeStoredJson(STORAGE_FAVS,[]);
 if(!Array.isArray(favorites))favorites=[];
 const state = {group:'live',selectedId:'nova-live',area:1,lastArea:1,toolbarIndex:0,viewerIndex:1,search:'',hls:null,nativePlaying:false,toastTimer:null};
-function allChannels(){return [...sampleChannels,...customChannels]}
-function allCategories(){const cats=[...categories];for(const c of customChannels){if(!cats.some(x=>x.id===c.group)){cats.splice(cats.length-1,0,{id:c.group,name:c.group,icon:'▣',color:'#4b4b6e'})}}return cats}
+function allChannels(){return [...(remoteChannels===null?sampleChannels:remoteChannels),...customChannels]}
+function allCategories(){const cats=[...categories];for(const c of allChannels()){if(!cats.some(x=>x.id===c.group)){cats.splice(cats.length-1,0,{id:c.group,name:c.group,icon:'▣',color:'#4b4b6e'})}}return cats}
 function currentChannels(){let items=allChannels().filter(c=>state.group==='favorites'?favorites.includes(c.id):c.group===state.group);if(state.search)items=items.filter(c=>c.name.toLowerCase().includes(state.search.toLowerCase()));return items}
 function getSelected(){return allChannels().find(c=>c.id===state.selectedId)||null}
 function getGroup(id){return allCategories().find(c=>c.id===id)}
@@ -172,23 +184,102 @@ function parseM3U(text){const lines=text.replace(/\r/g,'').split('\n');const imp
 function updateClock(){els.clock.textContent=new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date())}
 function showSearch(){els.searchBox.classList.remove('hidden');els.searchInput.focus();state.area=1}
 function openDialog(){els.groupSelect.innerHTML=allCategories().filter(c=>c.id!=='favorites').map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');els.groupSelect.value=state.group==='favorites'?'general':state.group;els.dialog.showModal();}
+
+function groupFromServer(group){
+  const s=String(group||'').trim();
+  const v=s.toLowerCase();
+  if (['live','البث المباشر','مباشر'].includes(v))return 'live';
+  if (['sports','الرياضة','رياضة'].includes(v))return 'sports';
+  if (['news','الأخبار','اخبار','أخبار'].includes(v))return 'news';
+  if (['general','المنوعات','منوعات'].includes(v))return 'general';
+  return s.slice(0,70)||'general';
+}
+function decodeRemoteConfig(raw){
+  const cfg=JSON.parse(raw);
+  if(!cfg || !Array.isArray(cfg.channels) || cfg.channels.length>100)throw Error('Invalid channel list');
+  return cfg.channels.map((item,index)=>{
+    if (!item || typeof item!=='object')return null;
+    const name=String(item.name||'').trim().slice(0,100);
+    const id=String(item.id||'').trim().slice(0,60);
+    if(!name || !/^[a-zA-Z0-9_-]{1,60}$/.test(id))return null;
+    const source=String(item.url||'').trim();
+    let url='';
+    try {
+      const parsed=new URL(source, platformOrigin+'/');
+      if(parsed.protocol==='https:' || parsed.protocol==='http:')url=parsed.href;
+    }catch{}
+    if(!url)return null;
+    return {id:id==='live'?'nova-live':'remote-'+id,
+      name,group:groupFromServer(item.group),url,short:name.slice(0,4).toUpperCase(),
+      hint:String(item.description||'').slice(0,250)};
+  }).filter(Boolean);
+}
+window.novaConfigLoaded = function(payload){
+  try {
+    const updated=decodeRemoteConfig(payload);
+    const old=getSelected();
+    const oldUrl=old?.url||'';
+    const wasShowing=els.video.classList.contains('visible');
+    const firstSync=remoteChannels===null;
+    remoteChannels=updated;
+    if(!allChannels().some(c=>c.id===state.selectedId)){
+      stopPlayback();
+      state.selectedId=allChannels()[0]?.id||'';
+      state.group=getSelected()?.group||'live';
+    } else if(wasShowing && oldUrl!==getSelected()?.url){
+      startPlayback();
+    }
+    render();
+    if(firstSync && !wasShowing && shouldAutoplay() && state.selectedId && getSelected()?.url){
+      setTimeout(()=>{if(!els.video.classList.contains('visible') && !$('#streamDialog').open && !els.dialog.open)startPlayback()},400);
+    }
+    $('#platformSyncStatus').textContent='القنوات متزامنة مع لوحة التحكم ✓';
+  }catch(err){console.warn('NOVA TV config invalid:',err.message);window.novaConfigFailed();}
+};
+window.novaConfigFailed = function(){
+  $('#platformSyncStatus').textContent='تعذّر تحديث القنوات حالياً. ستتم إعادة المحاولة تلقائياً.';
+};
+function syncPlatformChannels(){
+  if(window.NovaAndroid?.fetchChannelConfig){window.NovaAndroid.fetchChannelConfig(platformOrigin);}
+  else {
+    fetch(platformOrigin+'/config.json',{cache:'no-store'})
+      .then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.text()})
+      .then(window.novaConfigLoaded).catch(window.novaConfigFailed);
+  }
+}
+
 function showStreamDialog(){
   $('#streamUrl').value=liveChannel.url;
+  $('#platformUrl').value=platformOrigin;
   $('#autoplayEnabled').checked=shouldAutoplay();
   $('#streamDialog').showModal();
   $('#streamUrl').focus();
 }
 function saveStreamUrl(e){
   e.preventDefault();
-  const source=safeMediaUrl($('#streamUrl').value.trim());
-  if(!source||!source.includes('.m3u8')){showToast('أدخل رابط HLS كامل ينتهي بـ m3u8');return}
-  try{localStorage.setItem(STORAGE_LIVE,source);localStorage.setItem(STORAGE_AUTOPLAY,$('#autoplayEnabled').checked?'1':'0')}catch{showToast('تعذّر حفظ الإعدادات');return}
+  const raw=$('#streamUrl').value.trim();
+  const source=raw?safeMediaUrl(raw):'';
+  if(raw && (!source || !source.includes('.m3u8'))){showToast('رابط HLS غير صحيح');return}
+  const base=normalizePlatform($('#platformUrl').value);
+  if(!base){showToast('استخدم رابط منصة يبدأ بـ HTTPS');return}
+  try {
+    localStorage.setItem(STORAGE_PLATFORM,base);
+    if(source)localStorage.setItem(STORAGE_LIVE,source);
+    else localStorage.removeItem(STORAGE_LIVE);
+    localStorage.setItem(STORAGE_AUTOPLAY,$('#autoplayEnabled').checked?'1':'0');
+  }catch{showToast('تعذّر حفظ الإعدادات');return}
   liveChannel.url=source;
+  const changed=platformOrigin!==base;
+  platformOrigin=base;
+  if(changed){remoteChannels=null;stopPlayback();}
   $('#streamDialog').close();
-  state.area=1;chooseGroup('live');chooseChannel('nova-live',{play:false});
-  showToast('تم حفظ رابط بثك، اضغط تشغيل عند بدء OBS');
+  render();
+  syncPlatformChannels();
+  showToast('تم حفظ المنصة وتحديث قائمة القنوات');
 }
 function init(){updateClock();setInterval(updateClock,30000);render();
+  syncPlatformChannels();
+  setInterval(syncPlatformChannels,60000);
   if (liveChannel.url && shouldAutoplay()) {
     setTimeout(() => {
       if (state.selectedId === 'nova-live' && !$('#streamDialog').open && !els.dialog.open && !els.video.classList.contains('visible')) {
