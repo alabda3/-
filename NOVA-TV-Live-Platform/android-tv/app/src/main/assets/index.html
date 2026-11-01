@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#050506">
+  <title>Nova TV — تطبيق تلفزيون تجريبي</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand" aria-label="Nova TV"><span class="brand-mark">▶</span><span>NOVA <b>TV</b></span><span class="brand-caption">واجهة تلفزيون</span></div>
+      <div class="top-actions">
+        <span class="keyboard-tip">الريموت: الأسهم + OK | ↑ للأزرار</span>
+        <button class="top-button primary" id="streamBtn" type="button">⚙ <span>إعدادات بثي</span></button>
+        <button class="top-button" id="searchBtn" type="button" title="بحث /">⌕ <span>بحث</span></button>
+        <button class="top-button" id="importBtn" type="button" title="استيراد ملف M3U">⇩ <span>استيراد M3U</span></button>
+        <button class="top-button primary" id="addBtn" type="button">＋ <span>إضافة قناة</span></button>
+        <span class="clock" id="clock">--:--</span>
+      </div>
+    </header>
+
+    <main class="tv-grid">
+      <aside class="sidebar panel" aria-label="أقسام القنوات">
+        <div class="panel-heading"><div><span class="eyebrow">التصفح</span><h1>الأقسام</h1></div><span class="heading-indicator">01</span></div>
+        <nav id="categories" class="scroll-list categories" aria-label="الأقسام"></nav>
+        <div class="sidebar-foot"><span class="online-dot"></span> بثك الشخصي من OBS — رابط البث من الإعدادات</div>
+      </aside>
+
+      <section class="channel-panel panel" aria-label="قائمة القنوات">
+        <div class="panel-heading"><div><span class="eyebrow" id="currentGroupCaption">مكتبة القنوات</span><h2 id="currentGroup">الرياضة</h2></div><span class="count-chip" id="channelCount">0 قناة</span></div>
+        <div id="searchBox" class="search-box hidden"><input id="searchInput" type="search" placeholder="ابحث عن اسم القناة ..." aria-label="بحث عن قناة"><button type="button" id="closeSearch" aria-label="إغلاق البحث">✕</button></div>
+        <div class="scroll-list channels" id="channels" role="listbox" aria-label="القنوات"></div>
+        <div class="panel-footer">↑ ↓ تنقّل بين القنوات <span>•</span> Enter تشغيل <span>•</span> ← → تبديل العمود</div>
+      </section>
+
+      <section class="viewer panel" aria-label="مشغل التلفزيون">
+        <div class="viewer-heading"><div><span class="eyebrow">المشغّل</span><h2>العرض المباشر</h2></div><span class="live-label"><i></i> LIVE TV</span></div>
+        <div class="player-frame" id="playerFrame">
+          <video id="video" controls playsinline preload="none" aria-label="مشغل الفيديو"></video>
+          <div class="empty-player" id="emptyPlayer"><div class="empty-symbol">▶</div><strong id="playerPrompt">اختر قناة للعرض</strong><p id="playerHint">ادخل رابط HLS لقناتك من إعدادات بثي ثم شغّل OBS.</p></div>
+        </div>
+        <div class="selected-info">
+          <div class="selected-channel-logo" id="selectedLogo">TV</div>
+          <div class="selected-channel-copy"><span class="eyebrow">القناة المحددة</span><h3 id="selectedName">لم يتم اختيار قناة</h3><p id="selectedMeta">حدد قناة من القائمة</p></div>
+          <button class="round-button" id="favBtn" title="إضافة للمفضلة" type="button" aria-label="إضافة للمفضلة">☆</button>
+        </div>
+        <div class="viewer-actions">
+          <button class="viewer-button" type="button" id="playBtn">▶ تشغيل</button>
+          <button class="viewer-button" type="button" id="fullscreenBtn">⛶ ملء الشاشة</button>
+        </div>
+        <div class="info-card"><span class="info-icon">ⓘ</span><p><b>تنبيه مهم:</b> قناتك الخاصة تعمل مع OBS عبر سيرفر NOVA TV. أدخل رابط HLS من زر «إعدادات بثي». بث المحتوى الذي تملك حقوقه فقط.</p></div>
+        <div class="remote-guide"><span>REMOTE READY</span><small>متوافق مع لوحة المفاتيح وأزرار الاتجاهات في كثير من أجهزة Android TV</small></div>
+      </section>
+    </main>
+  </div>
+
+  <input type="file" id="m3uFile" accept=".m3u,.m3u8,text/plain,application/vnd.apple.mpegurl" hidden>
+
+  <dialog id="streamDialog" class="app-dialog">
+    <form id="streamForm" method="dialog">
+      <div class="dialog-top"><h2>إعدادات بث NOVA LIVE</h2><button id="closeStream" type="button" aria-label="إغلاق">✕</button></div>
+      <p class="dialog-note">انسخ رابط HLS من موقع NOVA TV بعد ربط الدومين. تحفظه مرة واحدة على هذا التلفزيون، ولا يحتاج إعادة بناء APK.</p>
+      <label>رابط بث HLS<input id="streamUrl" type="url" inputmode="url" required placeholder="https://tv.example.com/hls/live/index.m3u8" dir="ltr"></label>
+      <div class="dialog-actions"><button class="cancel" id="cancelStream" type="button">إلغاء</button><button class="save" type="submit">حفظ الرابط</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="addDialog" class="app-dialog">
+    <form id="addForm" method="dialog">
+      <div class="dialog-top"><h2>إضافة قناة</h2><button id="dismissDialog" aria-label="إغلاق" type="button">✕</button></div>
+      <p class="dialog-note">أضف فقط البث الذي لديك حق قانوني في استخدامه. الروابط تُحفظ محلياً على جهازك.</p>
+      <label>اسم القناة<input name="name" required maxlength="80" placeholder="مثال: قناتي المباشرة"></label>
+      <label>القسم<select name="group" id="groupSelect"></select></label>
+      <label>رابط الفيديو<input name="url" required type="url" placeholder="https://example.com/live.m3u8"></label>
+      <label>رابط الشعار (اختياري)<input name="logo" type="url" placeholder="https://example.com/logo.png"></label>
+      <div class="dialog-actions"><button type="button" class="cancel" id="cancelDialog">إلغاء</button><button class="save" type="submit">حفظ القناة</button></div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <!-- Android TV uses native Media3 for HLS and MP4, no CDN needed. -->
+  <script src="app.js"></script>
+</body>
+</html>
