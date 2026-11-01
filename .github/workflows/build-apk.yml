@@ -3,13 +3,12 @@ name: Build NOVA TV APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [main]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,16 +22,17 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install SDK Platform 35
+      - name: Install Android SDK
         run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Set up Gradle 8.10.2
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
       - name: Build installable debug APK
-        run: cd NOVA-TV-Live-Platform/android-tv cd android-tv && gradlecd android-tv && gradle gradle :app:assembleDebug --no-daemon
+        working-directory: NOVA-TV-Live-Platform/android-tv
+        run: gradle :app:assembleDebug --no-daemon
 
       - name: Upload NOVA TV APK
         uses: actions/upload-artifact@v4
