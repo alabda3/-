@@ -1,0 +1,40 @@
+name: Build NOVA TV Television APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'NOVA-TV-Live-Platform/android-tv-television/**'
+      - '.github/workflows/build-nova-television.yml'
+
+jobs:
+  build-tv:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+      - name: Install Android SDK packages
+        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Build TV APK
+        working-directory: NOVA-TV-Live-Platform/android-tv-television
+        run: gradle :app:assembleDebug --no-daemon
+      - name: Upload TV APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NOVA-TV-Television-APK
+          path: NOVA-TV-Live-Platform/android-tv-television/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
