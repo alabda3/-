@@ -37,6 +37,7 @@ import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
 import androidx.webkit.WebViewAssetLoader;
@@ -210,7 +211,12 @@ public class MainActivity extends Activity {
 
         setContentView(root);
 
-        player = new ExoPlayer.Builder(this).build();
+        // NOVA_STABLE_HLS_DELAY_V1: request larger playback and recovery buffers.
+        player = new ExoPlayer.Builder(this)
+            .setLoadControl(new DefaultLoadControl.Builder()
+                .setBufferDurationsMs(20000, 35000, 5000, 8000)
+                .build())
+            .build();
         playerView.setPlayer(player);
         player.addListener(new Player.Listener() {
             @Override
@@ -277,6 +283,14 @@ public class MainActivity extends Activity {
         String path = uri.getPath();
         if (path != null && path.toLowerCase(java.util.Locale.ROOT).endsWith(".m3u8")) {
             builder.setMimeType(MimeTypes.APPLICATION_M3U8);
+            // Aim to play 20 seconds behind the live edge, where the playlist allows it.
+            builder.setLiveConfiguration(new MediaItem.LiveConfiguration.Builder()
+                .setTargetOffsetMs(20000L)
+                .setMinOffsetMs(15000L)
+                .setMaxOffsetMs(30000L)
+                .setMinPlaybackSpeed(1.0f)
+                .setMaxPlaybackSpeed(1.0f)
+                .build());
         }
         fullscreen = false;
         positionPlayer();
