@@ -3,6 +3,12 @@
 const STORAGE_CHANNELS = 'nova-tv-custom-channels-v1';
 const STORAGE_FAVS = 'nova-tv-favorites-v1';
 const STORAGE_LIVE = 'nova-tv-own-live-url-v1';
+// nova-tv-autoplay-1.3: setting persists on this device.
+const STORAGE_AUTOPLAY = 'nova-tv-autoplay-v1';
+function shouldAutoplay(){
+  try { return localStorage.getItem(STORAGE_AUTOPLAY) !== '0'; }
+  catch { return true; }
+}
 const categories = [
   {id:'live', name:'البث المباشر', icon:'▶', color:'#6036bc'},
   {id:'sports', name:'الرياضة', icon:'⚽', color:'#412b73'},
@@ -168,6 +174,7 @@ function showSearch(){els.searchBox.classList.remove('hidden');els.searchInput.f
 function openDialog(){els.groupSelect.innerHTML=allCategories().filter(c=>c.id!=='favorites').map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');els.groupSelect.value=state.group==='favorites'?'general':state.group;els.dialog.showModal();}
 function showStreamDialog(){
   $('#streamUrl').value=liveChannel.url;
+  $('#autoplayEnabled').checked=shouldAutoplay();
   $('#streamDialog').showModal();
   $('#streamUrl').focus();
 }
@@ -175,13 +182,20 @@ function saveStreamUrl(e){
   e.preventDefault();
   const source=safeMediaUrl($('#streamUrl').value.trim());
   if(!source||!source.includes('.m3u8')){showToast('أدخل رابط HLS كامل ينتهي بـ m3u8');return}
-  try{localStorage.setItem(STORAGE_LIVE,source)}catch{showToast('تعذّر حفظ الرابط');return}
+  try{localStorage.setItem(STORAGE_LIVE,source);localStorage.setItem(STORAGE_AUTOPLAY,$('#autoplayEnabled').checked?'1':'0')}catch{showToast('تعذّر حفظ الإعدادات');return}
   liveChannel.url=source;
   $('#streamDialog').close();
   state.area=1;chooseGroup('live');chooseChannel('nova-live',{play:false});
   showToast('تم حفظ رابط بثك، اضغط تشغيل عند بدء OBS');
 }
 function init(){updateClock();setInterval(updateClock,30000);render();
+  if (liveChannel.url && shouldAutoplay()) {
+    setTimeout(() => {
+      if (state.selectedId === 'nova-live' && !$('#streamDialog').open && !els.dialog.open && !els.video.classList.contains('visible')) {
+        startPlayback();
+      }
+    }, 900);
+  }
   $('#streamBtn').addEventListener('click',showStreamDialog);
   $('#streamForm').addEventListener('submit',saveStreamUrl);
   $('#cancelStream').addEventListener('click',()=>$('#streamDialog').close());

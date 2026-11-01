@@ -34,3 +34,9 @@
  .viewer-button,.top-button {min-height:44px}
  .brand-caption,.keyboard-tip {display:none}
 }
+
+/* NOVA TV v1.3 - autoplay setting on phone, tablet and TV */
+.app-dialog label.nova-auto-switch{display:flex;align-items:center;gap:12px;margin-top:22px;
+  color:#eee;font-size:13px;line-height:1.6;cursor:pointer}
+.app-dialog .nova-auto-switch input[type=checkbox]{width:22px;height:22px;min-width:22px;
+  margin:0;padding:0;accent-color:#8252ff;cursor:pointer}
