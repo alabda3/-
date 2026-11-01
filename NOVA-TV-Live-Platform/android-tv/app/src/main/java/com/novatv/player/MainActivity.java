@@ -6,6 +6,10 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -47,6 +51,81 @@ public class MainActivity extends Activity {
     private volatile boolean editingText = false;
     private boolean fullscreen = false;
     private int frameLeft, frameTop, frameWidth = 1, frameHeight = 1;
+
+
+    // NOVA_AUTO_RECOVERY_V1: restart HLS after transient failures, but never after Stop.
+    private final Handler recoveryHandler = new Handler(Looper.getMainLooper());
+    private MediaItem activeMediaItem;
+    private boolean streamRequested = false;
+    private boolean activityForeground = false;
+    private boolean pausedByUser = false;
+    private boolean retryScheduled = false;
+    private int recoveryAttempts = 0;
+    private long bufferingSinceMs = 0L;
+
+    private final Runnable retryPlayback = new Runnable() {
+        @Override public void run() {
+            retryScheduled = false;
+            if (!streamRequested || !activityForeground || pausedByUser || player == null || activeMediaItem == null) return;
+            try {
+                player.stop();
+                player.clearMediaItems();
+                player.setMediaItem(activeMediaItem);
+                player.prepare();
+                player.play();
+                watchBuffering();
+            } catch (RuntimeException ex) {
+                Log.w("NOVA-TV", "Playback recovery failed", ex);
+                scheduleRecovery();
+            }
+        }
+    };
+
+    private final Runnable bufferingWatchdog = new Runnable() {
+        @Override public void run() {
+            if (!streamRequested || !activityForeground || pausedByUser || player == null || retryScheduled) return;
+            int state = player.getPlaybackState();
+            long now = SystemClock.elapsedRealtime();
+            if (state == Player.STATE_BUFFERING) {
+                if (bufferingSinceMs == 0L) bufferingSinceMs = now;
+                if (now - bufferingSinceMs > 25000L) {
+                    Log.w("NOVA-TV", "HLS buffering stalled; reconnecting");
+                    scheduleRecovery();
+                    return;
+                }
+            } else if (state == Player.STATE_READY) {
+                bufferingSinceMs = 0L;
+            } else if (state == Player.STATE_ENDED) {
+                scheduleRecovery();
+                return;
+            }
+            recoveryHandler.postDelayed(this, 5000L);
+        }
+    };
+
+    private void watchBuffering() {
+        recoveryHandler.removeCallbacks(bufferingWatchdog);
+        recoveryHandler.postDelayed(bufferingWatchdog, 5000L);
+    }
+
+    private void scheduleRecovery() {
+        if (!streamRequested || !activityForeground || pausedByUser || player == null || retryScheduled) return;
+        retryScheduled = true;
+        recoveryHandler.removeCallbacks(bufferingWatchdog);
+        // 2, 4, 8, 16, 30, 30... seconds. Never hammer a disconnected server.
+        long delay = Math.min(30000L, 2000L * (1L << Math.min(recoveryAttempts, 4)));
+        recoveryAttempts++;
+        Log.w("NOVA-TV", "HLS reconnect attempt " + recoveryAttempts + " in " + delay + "ms");
+        evaluateJs("window.novaNativeReconnecting && window.novaNativeReconnecting(" + (delay / 1000) + ")");
+        recoveryHandler.postDelayed(retryPlayback, delay);
+    }
+
+    private void cancelRecovery() {
+        recoveryHandler.removeCallbacks(retryPlayback);
+        recoveryHandler.removeCallbacks(bufferingWatchdog);
+        retryScheduled = false;
+        bufferingSinceMs = 0L;
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -129,13 +208,25 @@ public class MainActivity extends Activity {
         player.addListener(new Player.Listener() {
             @Override
             public void onIsPlayingChanged(boolean playing) {
+                if (playing) {
+                    recoveryAttempts = 0;
+                    bufferingSinceMs = 0L;
+                    watchBuffering();
+                }
                 evaluateJs("window.novaNativePlayerState && window.novaNativePlayerState(" + playing + ")");
             }
             @Override
+            public void onPlaybackStateChanged(int state) {
+                if (state == Player.STATE_BUFFERING && bufferingSinceMs == 0L)
+                    bufferingSinceMs = SystemClock.elapsedRealtime();
+                if (state == Player.STATE_READY) bufferingSinceMs = 0L;
+                if (state == Player.STATE_ENDED) scheduleRecovery();
+            }
+            @Override
             public void onPlayerError(PlaybackException error) {
-                playerView.setVisibility(View.GONE);
-                fullscreen = false;
-                evaluateJs("window.novaNativeError && window.novaNativeError('تعذّر تشغيل الرابط. تحقق من صلاحية البث أو صيغة الفيديو.')");
+                Log.w("NOVA-TV", "Playback error code " + error.errorCode, error);
+                // Keep the video area visible; retry instead of stopping the channel.
+                scheduleRecovery();
             }
         });
 
@@ -185,11 +276,18 @@ public class MainActivity extends Activity {
         playerView.setVisibility(View.VISIBLE);
         playerView.bringToFront();
         try {
+            cancelRecovery();
+            streamRequested = false;
             player.stop();
             player.clearMediaItems();
-            player.setMediaItem(builder.build());
+            activeMediaItem = builder.build();
+            pausedByUser = false;
+            recoveryAttempts = 0;
+            streamRequested = true;
+            player.setMediaItem(activeMediaItem);
             player.prepare();
             player.play();
+            watchBuffering();
         } catch (RuntimeException e) {
             playerView.setVisibility(View.GONE);
             evaluateJs("window.novaNativeError && window.novaNativeError('تعذّر تهيئة مشغّل الفيديو')");
@@ -212,6 +310,10 @@ public class MainActivity extends Activity {
     }
 
     private void stopMedia() {
+        streamRequested = false;
+        pausedByUser = false;
+        activeMediaItem = null;
+        cancelRecovery();
         fullscreen = false;
         player.stop();
         player.clearMediaItems();
@@ -270,12 +372,30 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        activityForeground = false;
+        cancelRecovery();
         if (player != null) player.pause();
         super.onPause();
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        activityForeground = true;
+        if (player != null && streamRequested && !pausedByUser) {
+            if (player.getPlayerError() != null || player.getPlaybackState() == Player.STATE_IDLE) {
+                recoveryHandler.post(retryPlayback);
+            } else {
+                player.play();
+                watchBuffering();
+            }
+        }
+    }
+
+    @Override
     protected void onDestroy() {
+        streamRequested = false;
+        cancelRecovery();
         if (pendingFileCallback != null) {
             pendingFileCallback.onReceiveValue(null);
             pendingFileCallback = null;
@@ -302,7 +422,20 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void toggle() {
             runOnUiThread(() -> {
-                if (player.getPlayWhenReady()) player.pause(); else player.play();
+                if (player.getPlayWhenReady()) {
+                    pausedByUser = true;
+                    cancelRecovery();
+                    player.pause();
+                } else {
+                    pausedByUser = false;
+                    if (player.getPlayerError() != null || player.getPlaybackState() == Player.STATE_IDLE
+                            || player.getPlaybackState() == Player.STATE_ENDED) {
+                        recoveryHandler.post(retryPlayback);
+                    } else {
+                        player.play();
+                        watchBuffering();
+                    }
+                }
             });
         }
 

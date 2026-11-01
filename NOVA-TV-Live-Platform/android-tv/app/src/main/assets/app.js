@@ -134,6 +134,10 @@ window.novaNativePlayerState = function(playing){
   state.nativePlaying=!!playing;
   if(els.video.classList.contains('visible'))els.play.textContent=playing?'Ⅱ إيقاف مؤقت':'▶ تشغيل';
 };
+window.novaNativeReconnecting = function(seconds) {
+  els.play.textContent = '↻ إعادة الاتصال';
+  showToast('انقطع البث مؤقتاً، إعادة الاتصال تلقائياً خلال ' + seconds + ' ثوانٍ');
+};
 window.novaNativeError = function(message){
   stopPlayback();showPlayerPlaceholder('تعذّر تشغيل البث',message||'تحقق من الرابط');showToast(message||'فشل تشغيل البث');
 };
